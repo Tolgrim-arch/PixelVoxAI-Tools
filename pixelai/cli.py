@@ -946,6 +946,21 @@ def build_parser() -> argparse.ArgumentParser:
     register_ui(sub)
     from pixelai.tileqa import register as register_tileqa
     register_tileqa(sub)
+
+    studio_p = sub.add_parser(
+        "studio",
+        help="Launch the optional offline local browser Studio (127.0.0.1) for voxel sculpting, 2D frame patching, and live FX.",
+    )
+    studio_p.add_argument("file", nargs="?", default=None, help="Optional .vox.json, .json, or .png file to open.")
+    studio_p.add_argument("--port", type=int, default=5190, help="Localhost port (default: 5190).")
+    studio_p.add_argument("--no-browser", action="store_true", help="Do not automatically open the system browser.")
+
+    def _run_studio(args: argparse.Namespace) -> int:
+        from pixelai.studio import run_studio_server
+        run_studio_server(args.file, port=args.port, open_browser=not args.no_browser)
+        return 0
+
+    studio_p.set_defaults(func=_run_studio)
     return parser
 
 

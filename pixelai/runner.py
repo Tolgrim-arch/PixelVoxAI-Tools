@@ -9,7 +9,7 @@ from pixelai.exporter import extract_spec_from_png
 from pixelai.inspect_tool import load_png_as_canvas
 from pixelai.palettes import resolve_palette
 from pixelai.schema import lint_op_fields, lint_post_fields
-from pixelai import autotile, building, creatures, deform, filters, fx, iso, items, materials, nature, organic, rig, ui
+from pixelai import autotile, building, creatures, deform, filters, fx, iso, items, materials, nature, organic, rig, ui, voxel
 
 
 _GENERATOR_OPS = frozenset({
@@ -17,6 +17,7 @@ _GENERATOR_OPS = frozenset({
     "animal_rig", "char_rig", "nature_rig", "item_rig",
     "building", "portrait_rig", "ui_rig", "autotile",
     "tilemap", "iso_structure", "material", "spine_rig",
+    "voxel_model",
 })
 
 
@@ -430,6 +431,34 @@ def _execute_ops_unchecked(canvas, ops, palette, defs, frame_idx, total_frames):
                 step_y=int(op["step_y"]) if "step_y" in op else None,
                 default_bevel=bool(op.get("bevel", True)),
                 default_ground_shadow=int(op.get("ground_shadow", 2)),
+            )
+        elif kind == "voxel_model":
+            if "source" in op:
+                vmodel = voxel.VoxelModel.load(op["source"])
+            else:
+                vmodel = voxel.VoxelModel.from_dict(op)
+            raw_oblique = op.get("oblique")
+            oblique_tuple = (
+                (float(raw_oblique["y"]), float(raw_oblique["z"]))
+                if isinstance(raw_oblique, dict)
+                else (tuple(float(v) for v in raw_oblique) if isinstance(raw_oblique, (list, tuple)) else None)
+            )
+            cam = voxel.VoxelCamera(
+                yaw=float(op.get("yaw", 0.0)),
+                elevation=float(op.get("elevation", 30.0)),
+                ppu=int(op.get("ppu", 1)),
+                oblique=oblique_tuple,
+                origin_x=int(op["origin_x"]) if "origin_x" in op else None,
+                origin_y=int(op["origin_y"]) if "origin_y" in op else None,
+            )
+            raw_thresh = op.get("thresholds", (-0.18, 0.28))
+            voxel.render_voxel_model(
+                vmodel,
+                canvas=canvas,
+                camera=cam,
+                smooth=float(op.get("smooth", 0.5)),
+                ao=float(op.get("ao", 0.35)),
+                thresholds=(float(raw_thresh[0]), float(raw_thresh[1])),
             )
         elif kind == "band_gradient":
             if "ramp" in op:

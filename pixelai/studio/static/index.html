@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PixelAI Studio (Offline)</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span id="icon-logo" class="icon"></span>
+      <strong>PixelAI Studio</strong>
+      <span id="file-label" class="muted">untitled.vox.json</span>
+    </div>
+    <nav class="mode-tabs" role="tablist">
+      <button class="tab active" data-mode="voxel">Voxel Layers</button>
+      <button class="tab" data-mode="frame2d">2D Frame Patch</button>
+    </nav>
+    <div class="actions">
+      <button id="btn-undo" title="Undo (Ctrl+Z)"><span id="icon-undo" class="icon"></span></button>
+      <button id="btn-redo" title="Redo (Ctrl+Y)"><span id="icon-redo" class="icon"></span></button>
+      <button id="btn-copy-cli" title="Copy CLI Command"><span id="icon-copy" class="icon"></span> CLI</button>
+      <button id="btn-save" class="primary" title="Save JSON"><span id="icon-save" class="icon"></span> Save</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="dock left-dock">
+      <section>
+        <h3>Semantic Layers</h3>
+        <ul id="layer-list" class="layer-list"></ul>
+      </section>
+      <section>
+        <h3>Z-Slice: <span id="z-label">0</span></h3>
+        <input id="z-slider" type="range" min="0" max="23" value="0" />
+        <label class="toggle"><input id="mirror-x" type="checkbox" /> Mirror X (M)</label>
+      </section>
+      <section>
+        <h3>Ramp Swatches</h3>
+        <div id="ramp-swatches" class="swatches"></div>
+      </section>
+    </aside>
+
+    <section class="viewport-pane">
+      <div class="toolbar">
+        <button class="tool active" data-tool="pencil" title="Pencil (B)"><span id="icon-pencil" class="icon"></span></button>
+        <button class="tool" data-tool="eraser" title="Eraser (E)"><span id="icon-eraser" class="icon"></span></button>
+        <button class="tool" data-tool="eyedropper" title="Eyedropper (I)"><span id="icon-eyedropper" class="icon"></span></button>
+      </div>
+      <canvas id="edit-canvas" width="384" height="384"></canvas>
+      <div class="statusbar">
+        <span id="status-cell">Cell: (0, 0, 0)</span>
+        <span id="status-count">Voxels: 0</span>
+        <span id="status-oracle">Oracle: CPU 1:1</span>
+      </div>
+    </section>
+
+    <aside class="dock right-dock">
+      <section>
+        <h3>Live CLI Oracle Preview</h3>
+        <div class="preview-box">
+          <img id="preview-img" alt="Live pixel art preview" />
+        </div>
+        <label>Yaw: <span id="yaw-label">30°</span>
+          <input id="yaw-slider" type="range" min="0" max="315" step="45" value="30" />
+        </label>
+        <label>Elevation: <span id="elev-label">30°</span>
+          <input id="elev-slider" type="range" min="0" max="60" step="5" value="30" />
+        </label>
+      </section>
+
+      <section>
+        <h3>Post-FX &amp; Micro-FX</h3>
+        <label class="toggle"><input id="fx-outline" type="checkbox" checked /> External Outline (ext_outline)</label>
+        <label class="toggle"><input id="fx-bounce" type="checkbox" /> Bounce (2px)</label>
+        <label class="toggle"><input id="fx-glint" type="checkbox" /> Glint Shine Sweep</label>
+        <label>Frame: <span id="frame-label">0</span>
+          <input id="frame-slider" type="range" min="0" max="3" value="0" />
+        </label>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

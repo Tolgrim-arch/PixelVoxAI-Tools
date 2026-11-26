@@ -219,6 +219,24 @@ OP_SPECS["ui_rig"]["notes"] = [
     "All six states are explicit: normal|hover|pressed|selected|disabled|focus. Protected content remains clear; sparse motifs stay inside fixed corner caps for nine-slice resizing.",
     "Universal manifests export a source-bound UI contract for a single composition per frame. Use uicheck on actual exported pixels; preserved caps do not prove text fit, focus behavior or artistic quality.",
 ]
+OP_SPECS["voxel_model"] = {
+    "summary": "Deterministic sparse 3D voxel model with semantic layers, closed-palette ramps, and multi-angle projection.",
+    "required": [],
+    "optional": [
+        "format", "source", "bounds", "pivot", "palette_ref", "ramps", "outline",
+        "sockets", "layers", "yaw", "elevation", "oblique", "ppu", "origin_x", "origin_y",
+        "smooth", "ao", "thresholds", "lights", "fluids",
+    ],
+    "example": {
+        "op": "voxel_model",
+        "bounds": {"w": 16, "d": 16, "h": 16},
+        "ramps": [{"name": "stone", "colors": ["#596070", "#828c9e", "#b5bfd1"], "material": "solid"}],
+        "layers": [{"id": "body_base", "role": "body", "priority": 0, "voxels": [[0, 0, 0, 2]]}],
+        "yaw": 0,
+        "elevation": 30,
+    },
+}
+
 
 
 POST_OP_SPECS: dict[str, dict[str, Any]] = {
