@@ -48,20 +48,42 @@ def _estimate_normal(
     occupied: set[Coord3],
     smooth: float,
 ) -> tuple[float, float, float]:
-    """Blend exact hit face normal with air-neighbor smoothing."""
+    """Blend exact hit face normal with continuous 26-neighbor air-gradient normal.
+
+    Prevents vertical zebra-striping on diagonal voxel staircases when smooth > 0.
+    """
+    fx, fy, fz = float(face_normal[0]), float(face_normal[1]), float(face_normal[2])
     if smooth <= 0.0:
-        return (float(face_normal[0]), float(face_normal[1]), float(face_normal[2]))
+        return (fx, fy, fz)
+
     x, y, z = coord
-    nx, ny, nz = float(face_normal[0]), float(face_normal[1]), float(face_normal[2])
-    w6 = smooth * 0.45
-    for dx, dy, dz in _NEIGHBORS_6:
-        if (x + dx, y + dy, z + dz) not in occupied:
-            nx += dx * w6
-            ny += dy * w6
-            nz += dz * w6
+    gx = gy = gz = 0.0
+    for dz in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0 and dz == 0:
+                    continue
+                if (x + dx, y + dy, z + dz) not in occupied:
+                    dist2 = dx * dx + dy * dy + dz * dz
+                    w = 1.0 if dist2 == 1 else (0.5 if dist2 == 2 else 0.25)
+                    gx += dx * w
+                    gy += dy * w
+                    gz += dz * w
+
+    glen = math.sqrt(gx * gx + gy * gy + gz * gz)
+    if glen < 1e-6:
+        return (fx, fy, fz)
+    gx /= glen
+    gy /= glen
+    gz /= glen
+
+    s = max(0.0, min(1.0, smooth))
+    nx = fx * (1.0 - s) + gx * s
+    ny = fy * (1.0 - s) + gy * s
+    nz = fz * (1.0 - s) + gz * s
     length = math.sqrt(nx * nx + ny * ny + nz * nz)
     if length < 1e-6:
-        return (0.0, 0.0, 1.0)
+        return (fx, fy, fz)
     return (nx / length, ny / length, nz / length)
 
 
@@ -188,7 +210,7 @@ def render_voxel_model(
     width: int = 64,
     height: int = 64,
     camera: VoxelCamera | None = None,
-    smooth: float = 0.4,
+    smooth: float = 0.85,
     ao: float = 0.35,
     thresholds: tuple[float, float] = (-0.18, 0.28),
     lights: list[PointLight] | None = None,

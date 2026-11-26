@@ -477,7 +477,7 @@ def _execute_ops_unchecked(canvas, ops, palette, defs, frame_idx, total_frames):
                 vmodel,
                 canvas=canvas,
                 camera=cam,
-                smooth=float(op.get("smooth", 0.4)),
+                smooth=float(op.get("smooth", 0.85)),
                 ao=float(op.get("ao", 0.35)),
                 thresholds=(float(raw_thresh[0]), float(raw_thresh[1])),
                 lights=point_lights,
