@@ -127,3 +127,13 @@ def compute_lighting_shade_shift(
         elif energy >= 0.25:
             shift += 1
     return max(-2, min(2, shift))
+
+
+def extract_emissive_lights(model: VoxelModel, *, radius: float = 10.0, intensity: float = 1.0) -> list[PointLight]:
+    """Extract PointLight sources from all emissive voxels in `model`."""
+    lights: list[PointLight] = []
+    for coord, val in model.iter_voxels():
+        mat = model.palette.resolve_material(val)
+        if mat.emissive:
+            lights.append(PointLight(position=coord, radius=radius, intensity=intensity, kind="emissive"))
+    return lights

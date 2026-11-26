@@ -946,6 +946,8 @@ def build_parser() -> argparse.ArgumentParser:
     register_ui(sub)
     from pixelai.tileqa import register as register_tileqa
     register_tileqa(sub)
+    from pixelai.voxel.cli_cmds import register as register_voxel
+    register_voxel(sub)
 
     studio_p = sub.add_parser(
         "studio",
