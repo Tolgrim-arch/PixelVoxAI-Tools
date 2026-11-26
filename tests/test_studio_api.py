@@ -52,3 +52,24 @@ def test_studio_cli_subcommand_registered() -> None:
     assert args.file == "model.vox.json"
     assert args.port == 5199
     assert args.no_browser is True
+
+
+def test_studio_3d_pick_ramp_and_exports(tmp_path: Path) -> None:
+    from pixelai.studio.api import export_studio_payload, generate_ramp_payload, pick_voxel_at_pixel
+
+    state = StudioState.load(None)
+    # 3D face picking near center pivot (24, 34)
+    pick = pick_voxel_at_pixel({"spec": state.spec, "px": 24, "py": 34, "yaw": 30.0, "elevation": 30.0, "ppu": 2, "width": 48, "height": 48})
+    assert pick["hit"] is True
+    assert len(pick["coord"]) == 3 and len(pick["normal"]) == 3 and len(pick["place"]) == 3
+
+    # Hue-shifted ramp generator
+    ramp_res = generate_ramp_payload({"color": "#3b5dc9", "steps": 4, "name": "cobalt"})
+    assert ramp_res["ramp"]["name"] == "cobalt" and len(ramp_res["ramp"]["colors"]) == 4
+
+    # Export PNG, GIF, Spritesheet, and Godot 4 .tres
+    for fmt, ext in (("png", "png"), ("gif", "gif"), ("sheet", "png"), ("godot", "tres")):
+        out = tmp_path / f"out_{fmt}.{ext}"
+        res = export_studio_payload({"spec": state.spec, "format": fmt, "path": str(out), "total_frames": 4, "micro_fx": {"bounce": True}})
+        assert Path(res["exported"]).is_file()
+

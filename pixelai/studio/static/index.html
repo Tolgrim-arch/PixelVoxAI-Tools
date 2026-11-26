@@ -14,21 +14,32 @@
       <span id="file-label" class="muted">untitled.vox.json</span>
     </div>
     <nav class="mode-tabs" role="tablist">
-      <button class="tab active" data-mode="voxel">Voxel Layers</button>
-      <button class="tab" data-mode="frame2d">2D Frame Patch</button>
+      <button class="tab active" data-mode="voxel2d" title="Z-Slice Editor (Tab)">Voxel Slices</button>
+      <button class="tab" data-mode="voxel3d" title="3D Orbit Sculptor (Tab)">Voxel 3D</button>
+      <button class="tab" data-mode="frame2d" title="2D Frame Pixel Overrides">2D Frame Patch</button>
     </nav>
     <div class="actions">
       <button id="btn-undo" title="Undo (Ctrl+Z)"><span id="icon-undo" class="icon"></span></button>
       <button id="btn-redo" title="Redo (Ctrl+Y)"><span id="icon-redo" class="icon"></span></button>
       <button id="btn-copy-cli" title="Copy CLI Command"><span id="icon-copy" class="icon"></span> CLI</button>
-      <button id="btn-save" class="primary" title="Save JSON"><span id="icon-save" class="icon"></span> Save</button>
+      <button id="btn-save" title="Save JSON"><span id="icon-save" class="icon"></span> Save</button>
+      <select id="export-fmt" title="Export Format">
+        <option value="png">PNG</option>
+        <option value="gif">GIF</option>
+        <option value="sheet">Sheet</option>
+        <option value="godot">Godot .tres</option>
+      </select>
+      <button id="btn-export" class="primary" title="Export Asset"><span id="icon-export" class="icon"></span> Export</button>
     </div>
   </header>
 
   <main class="workspace">
     <aside class="dock left-dock">
       <section>
-        <h3>Semantic Layers</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <h3 style="margin:0;">Semantic Layers</h3>
+          <button id="btn-add-layer" title="Add Layer"><span id="icon-plus" class="icon"></span></button>
+        </div>
         <ul id="layer-list" class="layer-list"></ul>
       </section>
       <section>
@@ -39,6 +50,10 @@
       <section>
         <h3>Ramp Swatches</h3>
         <div id="ramp-swatches" class="swatches"></div>
+        <div style="display:flex;gap:6px;margin-top:8px;align-items:center;">
+          <input id="new-ramp-color" type="color" value="#3b5dc9" />
+          <button id="btn-add-ramp">+ Hue Ramp</button>
+        </div>
       </section>
     </aside>
 
@@ -46,13 +61,17 @@
       <div class="toolbar">
         <button class="tool active" data-tool="pencil" title="Pencil (B)"><span id="icon-pencil" class="icon"></span></button>
         <button class="tool" data-tool="eraser" title="Eraser (E)"><span id="icon-eraser" class="icon"></span></button>
+        <button class="tool" data-tool="repaint" title="Repaint (P)"><span id="icon-repaint" class="icon"></span></button>
         <button class="tool" data-tool="eyedropper" title="Eyedropper (I)"><span id="icon-eyedropper" class="icon"></span></button>
+        <button class="tool" data-tool="box" title="Box (R)"><span id="icon-box" class="icon"></span></button>
+        <button class="tool" data-tool="bucket" title="Bucket Fill (G)"><span id="icon-bucket" class="icon"></span></button>
+        <label class="toggle" style="margin:0 0 0 8px;"><input id="ai-diff-toggle" type="checkbox" /> AI Diff</label>
       </div>
       <canvas id="edit-canvas" width="384" height="384"></canvas>
       <div class="statusbar">
         <span id="status-cell">Cell: (0, 0, 0)</span>
         <span id="status-count">Voxels: 0</span>
-        <span id="status-oracle">Oracle: CPU 1:1</span>
+        <span id="status-oracle">Oracle: DDA CPU 1:1</span>
       </div>
     </section>
 
@@ -63,7 +82,7 @@
           <img id="preview-img" alt="Live pixel art preview" />
         </div>
         <label>Yaw: <span id="yaw-label">30°</span>
-          <input id="yaw-slider" type="range" min="0" max="315" step="45" value="30" />
+          <input id="yaw-slider" type="range" min="0" max="315" step="15" value="30" />
         </label>
         <label>Elevation: <span id="elev-label">30°</span>
           <input id="elev-slider" type="range" min="0" max="60" step="5" value="30" />
@@ -71,13 +90,16 @@
       </section>
 
       <section>
-        <h3>Post-FX &amp; Micro-FX</h3>
+        <h3>Post-FX &amp; Timeline</h3>
         <label class="toggle"><input id="fx-outline" type="checkbox" checked /> External Outline (ext_outline)</label>
         <label class="toggle"><input id="fx-bounce" type="checkbox" /> Bounce (2px)</label>
         <label class="toggle"><input id="fx-glint" type="checkbox" /> Glint Shine Sweep</label>
-        <label>Frame: <span id="frame-label">0</span>
-          <input id="frame-slider" type="range" min="0" max="3" value="0" />
-        </label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="btn-play" title="Play/Pause (Space)"><span id="icon-play" class="icon"></span></button>
+          <label style="flex:1;margin:0;">Frame: <span id="frame-label">0</span>
+            <input id="frame-slider" type="range" min="0" max="3" value="0" />
+          </label>
+        </div>
       </section>
     </aside>
   </main>

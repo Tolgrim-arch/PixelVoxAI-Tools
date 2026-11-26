@@ -10,7 +10,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from pixelai.studio.api import StudioState, get_palettes_payload, render_studio_payload
+from pixelai.studio.api import (
+    StudioState,
+    export_studio_payload,
+    generate_ramp_payload,
+    get_palettes_payload,
+    pick_voxel_at_pixel,
+    render_studio_payload,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -64,6 +71,15 @@ def make_handler(state: StudioState) -> type[BaseHTTPRequestHandler]:
                 body = self._read_json()
                 if path == "/api/render":
                     self._send_json(render_studio_payload(body))
+                    return
+                if path == "/api/pick":
+                    self._send_json(pick_voxel_at_pixel(body))
+                    return
+                if path == "/api/export":
+                    self._send_json(export_studio_payload(body))
+                    return
+                if path == "/api/ramp":
+                    self._send_json(generate_ramp_payload(body))
                     return
                 if path == "/api/save":
                     if "spec" in body:

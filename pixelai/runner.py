@@ -452,13 +452,37 @@ def _execute_ops_unchecked(canvas, ops, palette, defs, frame_idx, total_frames):
                 origin_y=int(op["origin_y"]) if "origin_y" in op else None,
             )
             raw_thresh = op.get("thresholds", (-0.18, 0.28))
+            raw_lights = op.get("lights", [])
+            point_lights = [
+                voxel.lighting.PointLight(
+                    position=(int(l["position"][0]), int(l["position"][1]), int(l["position"][2])),
+                    radius=float(l.get("radius", 10.0)),
+                    intensity=float(l.get("intensity", 1.0)),
+                    kind=str(l.get("kind", "torch")),
+                )
+                for l in raw_lights
+            ] if raw_lights else None
+            for fl in op.get("fluids", []):
+                fl_layer = voxel.VoxelLayer(id=str(fl.get("id", "fluid")), role="fluid", priority=int(fl.get("priority", 5)))
+                vmodel.add_layer(fl_layer)
+                start = (int(fl["start"][0]), int(fl["start"][1]), int(fl["start"][2]))
+                voxel.fluid.fill_basin(
+                    vmodel,
+                    fl_layer,
+                    start=start,
+                    water_level_z=int(fl["water_level_z"]),
+                    fluid_value=int(fl["value"]),
+                )
             voxel.render_voxel_model(
                 vmodel,
                 canvas=canvas,
                 camera=cam,
-                smooth=float(op.get("smooth", 0.5)),
+                smooth=float(op.get("smooth", 0.4)),
                 ao=float(op.get("ao", 0.35)),
                 thresholds=(float(raw_thresh[0]), float(raw_thresh[1])),
+                lights=point_lights,
+                sun_shadow=bool(op.get("sun_shadow", False)),
+                ambient_dark=bool(op.get("ambient_dark", False)),
             )
         elif kind == "band_gradient":
             if "ramp" in op:
