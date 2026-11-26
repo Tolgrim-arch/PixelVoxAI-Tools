@@ -111,3 +111,13 @@ class WorldAgent:
         if nz is not None:
             self.z = nz + 1
         return True
+
+    def navigate_to(self, world: VoxelWorld, goal: tuple[int, int, int]) -> bool:
+        """Compute and assign a 2.5D path to `goal` using `find_path_25d`."""
+        from .paths import find_path_25d
+
+        path_3d = find_path_25d(world.model, (self.x, self.y, self.z), goal)
+        if not path_3d:
+            return False
+        self.path = [(px, py) for px, py, _ in path_3d[1:]]
+        return True

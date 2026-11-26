@@ -343,6 +343,24 @@ def _cmd_voxel_piece(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_building(args: argparse.Namespace) -> int:
+    from .buildings import generate_building
+
+    model = generate_building(
+        width=args.width,
+        depth=args.depth,
+        floors=args.floors,
+        floor_height=args.floor_height,
+        theme=args.theme,
+        seed=args.seed,
+        roof=args.roof,
+    )
+    model.save(args.output)
+    w, d, h = model.bounds
+    print(f"Building ({args.theme}, {args.floors} floors, {w}x{d}x{h}) -> {args.output}")
+    return 0
+
+
 def _cmd_world(args: argparse.Namespace) -> int:
     from pixelai.voxel.bench import BenchmarkReport, measure_step
     from pixelai.voxel.physics import step_falling_blocks
@@ -402,7 +420,50 @@ def _cmd_world(args: argparse.Namespace) -> int:
 
     w, h = _parse_size(args.size) or (192, 128)
     at = _parse_xy(args.at)
+    follow_idx = getattr(args, "follow", None)
+    if follow_idx is not None and 0 <= follow_idx < len(getattr(world, "agents", [])):
+        ag = getattr(world, "agents", [])[follow_idx]
+        at = (ag.x, ag.y)
     use_lights = args.lights.lower() not in ("no", "false", "0", "off")
+
+    is_gif = args.output.lower().endswith(".gif") or bool(getattr(args, "gif", None))
+    if is_gif:
+        from ..exporter import export_gif
+
+        gif_path = getattr(args, "gif", None) or args.output
+        n_frames = max(1, int(getattr(args, "frames", 12)))
+        ms = max(20, int(getattr(args, "ms", 120)))
+        frames_list = []
+        for _ in range(n_frames):
+            world.step(1)
+            if getattr(args, "gravity", False):
+                step_falling_blocks(world.model)
+            cur_at = at
+            if follow_idx is not None and 0 <= follow_idx < len(getattr(world, "agents", [])):
+                ag = getattr(world, "agents", [])[follow_idx]
+                cur_at = (ag.x, ag.y)
+            c = world.render(
+                width=w,
+                height=h,
+                at=cur_at,
+                whole=args.whole,
+                yaw=args.yaw,
+                elevation=args.elev,
+                use_lights=use_lights,
+                hour=args.hour,
+                weather=args.weather,
+                section_z=args.section_z,
+                bg=args.bg,
+            )
+            if args.scale > 1:
+                c = scale_nearest(c, args.scale)
+            frames_list.append(c)
+        export_gif(frames_list, gif_path, durations_ms=[ms] * len(frames_list))
+        print(f"World GIF ({recipe.theme}/{recipe.generator}, {len(frames_list)} frames) -> {gif_path}")
+        if report:
+            print(report.format_text())
+        return 0
+
     render_fn = lambda: world.render(
         width=w,
         height=h,
@@ -573,6 +634,18 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     vpce.add_argument("--theme", choices=sorted(WORLD_THEMES), default="medieval", help="Piece theme (default: medieval).")
     vpce.set_defaults(func=_cmd_voxel_piece)
 
+    # pixelai voxel building
+    vb = vox_sub.add_parser("building", help="Generate a procedural multi-floor building with rooms and stairs.")
+    vb.add_argument("output", help="Output .vox.json path.")
+    vb.add_argument("--width", type=int, default=16, help="Building width (default: 16).")
+    vb.add_argument("--depth", type=int, default=16, help="Building depth (default: 16).")
+    vb.add_argument("--floors", type=int, default=2, help="Number of floors (default: 2).")
+    vb.add_argument("--floor-height", type=int, default=5, help="Height per floor in voxels (default: 5).")
+    vb.add_argument("--theme", choices=("medieval", "garden", "neon", "toxic"), default="medieval", help="Color theme.")
+    vb.add_argument("--roof", choices=("gable", "flat"), default="gable", help="Roof style (default: gable).")
+    vb.add_argument("--seed", type=int, default=42, help="Deterministic seed (default: 42).")
+    vb.set_defaults(func=_cmd_building)
+
     # pixelai world
     wp = subparsers.add_parser(
         "world",
@@ -600,4 +673,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     wp.add_argument("--save", default=None, help="Save world state snapshot to JSON.")
     wp.add_argument("--load", default=None, help="Load world state snapshot from JSON instead of generating.")
     wp.add_argument("--bench", action="store_true", help="Print timing benchmark report.")
+    wp.add_argument("--follow", type=int, default=None, help="Follow agent index with camera.")
+    wp.add_argument("--gif", default=None, help="Export animated world GIF to path (or pass .gif as output).")
+    wp.add_argument("--frames", type=int, default=12, help="Number of frames when exporting world GIF (default: 12).")
+    wp.add_argument("--ms", type=int, default=120, help="Frame duration in ms for world GIF (default: 120).")
     wp.set_defaults(func=_cmd_world)
