@@ -12,13 +12,23 @@ from pixelai.color import RGBA, parse_color
 from pixelai.exporter import export_gif, export_png
 from pixelai.filters import scale as scale_nearest
 from pixelai.voxel.camera import VoxelCamera
+from pixelai.voxel.anim import (
+    export_animation_gif,
+    export_animation_sheet,
+    generate_idle_frames,
+    generate_walk_frames,
+    render_animation_frames,
+)
+from pixelai.voxel.bench import BenchmarkReport, measure_step
 from pixelai.voxel.daycycle import evaluate_day_cycle
+from pixelai.voxel.editor import apply_operations
 from pixelai.voxel.lighting import extract_emissive_lights
 from pixelai.voxel.model import VoxelModel
 from pixelai.voxel.palettes_io import COMMUNITY_PRESETS, load_palette_any, verify_palette_colors
 from pixelai.voxel.pxl_bridge import export_pxl_file, import_pxl_file
 from pixelai.voxel.render import render_voxel_model, render_voxel_turntable
 from pixelai.voxel.samples import SAMPLE_NAMES, get_sample_model
+from pixelai.voxel.terrain import generate_terrain_model
 from pixelai.voxel.weather import WEATHER_MODES, apply_weather_overlay
 from pixelai.voxel.world import VoxelWorld
 from pixelai.voxel.worldgen import WORLD_THEMES, WorldRecipe
@@ -68,6 +78,66 @@ def _apply_bg(canvas: Canvas, bg_rgba: RGBA | None) -> Canvas:
             if canvas.get_pixel(px, py)[3] == 0:
                 canvas.set_pixel(px, py, bg_rgba)
     return canvas
+
+
+def _cmd_voxel_edit(args: argparse.Namespace) -> int:
+    model = _load_model_source(args.model)
+    ops: list[dict] = []
+    if args.ops:
+        loaded = json.loads(Path(args.ops).read_text(encoding="utf-8"))
+        if not isinstance(loaded, list):
+            raise ValueError("--ops JSON file must contain a list of operation objects")
+        ops.extend(loaded)
+    for raw_op in args.op:
+        ops.append(json.loads(raw_op))
+    edited = apply_operations(model, ops)
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.output).write_text(json.dumps(edited.to_dict(), indent=2), encoding="utf-8")
+    return 0
+
+
+def _cmd_voxel_animate(args: argparse.Namespace) -> int:
+    model = _load_model_source(args.model)
+    if args.cycle == "walk":
+        frames_models = generate_walk_frames(model, frames=args.frames, stride=args.stride, bob=args.bob)
+    else:
+        frames_models = generate_idle_frames(model, frames=args.frames, bob=args.bob)
+    w, h = _parse_size(args.size) or _auto_canvas_size(model)
+    bg_rgba = parse_color(args.bg) if args.bg else None
+    canvases = render_animation_frames(
+        frames_models,
+        yaw=args.yaw,
+        elev=args.elev,
+        scale=args.scale,
+        size=(w, h),
+        outline=args.outline,
+        bg=bg_rgba,
+    )
+    out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if out_path.suffix.lower() == ".gif":
+        export_animation_gif(canvases, out_path, ms=args.ms)
+    else:
+        export_animation_sheet(canvases, out_path)
+    return 0
+
+
+def _cmd_voxel_terrain(args: argparse.Namespace) -> int:
+    parts = [int(p) for p in args.size.lower().split("x")]
+    if len(parts) != 3:
+        raise ValueError(f"Invalid --size {args.size!r}; expected WxDxH (e.g. 32x32x16)")
+    model = generate_terrain_model(
+        width=parts[0],
+        depth=parts[1],
+        height=parts[2],
+        seed=args.seed,
+        theme=args.theme,
+        trees=not args.no_trees,
+    )
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(model.to_dict(), indent=2), encoding="utf-8")
+    return 0
 
 
 def _cmd_voxel_render(args: argparse.Namespace) -> int:
@@ -330,6 +400,40 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     vi.add_argument("--z", type=int, default=0, help="Z (or Y) slice offset for single sprite import.")
     vi.add_argument("--outline", default=None, help="Override outline hex color #rrggbb.")
     vi.set_defaults(func=_cmd_voxel_import_pxl)
+
+    # pixelai voxel edit
+    ved = vox_sub.add_parser("edit", help="Apply programmatic edit operations (paint, box, mirror, fluid, etc.) to a model.")
+    ved.add_argument("model", help=f"Path to voxel model JSON or built-in sample ({', '.join(SAMPLE_NAMES)}).")
+    ved.add_argument("output", help="Output voxel model JSON path.")
+    ved.add_argument("--ops", default=None, help="Path to JSON file containing a list of edit operations.")
+    ved.add_argument("--op", action="append", default=[], help="Inline JSON operation object (repeatable).")
+    ved.set_defaults(func=_cmd_voxel_edit)
+
+    # pixelai voxel animate
+    va = vox_sub.add_parser("animate", help="Generate procedural walk or idle animation (PNG sheet or GIF).")
+    va.add_argument("model", help=f"Path to voxel model JSON or built-in sample ({', '.join(SAMPLE_NAMES)}).")
+    va.add_argument("output", help="Output .png (spritesheet) or .gif path.")
+    va.add_argument("--cycle", choices=("walk", "idle"), default="walk", help="Animation cycle (default: walk).")
+    va.add_argument("--frames", type=int, default=4, help="Number of animation frames (default: 4).")
+    va.add_argument("--stride", type=int, default=1, help="Leg stride in voxels for walk cycle (default: 1).")
+    va.add_argument("--bob", type=int, default=1, help="Vertical bob in voxels (default: 1).")
+    va.add_argument("--yaw", type=float, default=0.0, help="Camera yaw in degrees (default: 0).")
+    va.add_argument("--elev", type=float, default=30.0, help="Camera elevation in degrees (default: 30).")
+    va.add_argument("--scale", type=int, default=4, help="Nearest-neighbor scale factor (default: 4).")
+    va.add_argument("--ms", type=int, default=120, help="Frame duration in ms for GIF output (default: 120).")
+    va.add_argument("--size", default=None, help="Frame size WxH (auto-framed if omitted).")
+    va.add_argument("--outline", choices=("outer", "none"), default="outer", help="External silhouette outline or lineless.")
+    va.add_argument("--bg", default=None, help="Optional background color #rrggbb.")
+    va.set_defaults(func=_cmd_voxel_animate)
+
+    # pixelai voxel terrain
+    vter = vox_sub.add_parser("terrain", help="Generate a standalone procedural terrain VoxelModel JSON.")
+    vter.add_argument("output", help="Output voxel model JSON path.")
+    vter.add_argument("--size", default="32x32x16", help="Terrain dimensions WxDxH (default: 32x32x16).")
+    vter.add_argument("--seed", type=int, default=42, help="Procedural seed (default: 42).")
+    vter.add_argument("--theme", choices=sorted(WORLD_THEMES), default="medieval", help="Terrain theme (default: medieval).")
+    vter.add_argument("--no-trees", action="store_true", help="Disable procedural trees/vegetation.")
+    vter.set_defaults(func=_cmd_voxel_terrain)
 
     # pixelai world
     wp = subparsers.add_parser(
