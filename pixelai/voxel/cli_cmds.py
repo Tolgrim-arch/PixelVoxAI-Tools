@@ -282,21 +282,113 @@ def _cmd_voxel_import_pxl(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_world(args: argparse.Namespace) -> int:
-    src = args.recipe.strip()
-    if src.lower() in WORLD_THEMES:
-        recipe = WorldRecipe.from_theme(src.lower(), seed=args.seed)
-    else:
-        data = json.loads(Path(src).read_text(encoding="utf-8"))
-        recipe = WorldRecipe.from_dict(data)
-        if args.seed is not None:
-            recipe.seed = args.seed
+def _cmd_voxel_region(args: argparse.Namespace) -> int:
+    from pixelai.voxel.regions import RegionManager
 
-    world = VoxelWorld.from_recipe(recipe)
+    cx, cy = _parse_xy(args.center) or (0, 0)
+    mgr = RegionManager(seed=args.seed, chunk_size=args.chunk_size, theme=args.theme)
+    model = mgr.build_window_model(cx=cx, cy=cy, radius=args.radius)
+    Path(args.output).write_text(json.dumps(model.to_dict(), indent=2) + "\n", encoding="utf-8")
+    print(f"Region ({args.theme}, center={cx},{cy}, radius={args.radius}) -> {args.output} ({len(model.flatten())} voxels)")
+    return 0
+
+
+def _cmd_voxel_rig(args: argparse.Namespace) -> int:
+    from pixelai.color import parse_color
+    from pixelai.voxel.anim import export_animation_gif, export_animation_sheet, render_animation_frames
+    from pixelai.voxel.rig import VoxelRig, default_humanoid_rig, generate_rig_idle_frames, generate_rig_walk_frames
+
+    rig = default_humanoid_rig() if args.rig == "humanoid" else VoxelRig.load(args.rig)
+    if args.cycle == "idle":
+        models = generate_rig_idle_frames(rig, frames=args.frames)
+    else:
+        models = generate_rig_walk_frames(rig, frames=args.frames)
+
+    out_path = Path(args.output)
+    size = _parse_size(args.size) or (64, 48)
+    bg_rgba = parse_color(args.bg) if args.bg else None
+    canvases = render_animation_frames(
+        models,
+        yaw=args.yaw,
+        elev=args.elev,
+        scale=args.scale,
+        size=size,
+        outline=args.outline,
+        bg=bg_rgba,
+    )
+    if out_path.suffix.lower() == ".gif":
+        export_animation_gif(canvases, out_path, duration_ms=args.ms)
+    else:
+        export_animation_sheet(canvases, out_path)
+    print(f"Rigged {args.cycle} ({len(models)} frames) -> {args.output}")
+    return 0
+
+
+def _cmd_voxel_foliage(args: argparse.Namespace) -> int:
+    from pixelai.voxel.foliage import generate_foliage
+
+    model = generate_foliage(args.kind, seed=args.seed, scale=args.scale)
+    Path(args.output).write_text(json.dumps(model.to_dict(), indent=2) + "\n", encoding="utf-8")
+    print(f"Foliage ({args.kind}, seed={args.seed}) -> {args.output} ({len(model.flatten())} voxels)")
+    return 0
+
+
+def _cmd_voxel_piece(args: argparse.Namespace) -> int:
+    from pixelai.voxel.foliage import generate_piece
+
+    w, d, h = (int(x) for x in args.size.lower().split("x"))
+    model = generate_piece(args.kind, width=w, depth=d, height=h, theme=args.theme)
+    Path(args.output).write_text(json.dumps(model.to_dict(), indent=2) + "\n", encoding="utf-8")
+    print(f"Piece ({args.kind}, {w}x{d}x{h}, {args.theme}) -> {args.output} ({len(model.flatten())} voxels)")
+    return 0
+
+
+def _cmd_world(args: argparse.Namespace) -> int:
+    from pixelai.voxel.bench import BenchmarkReport, measure_step
+    from pixelai.voxel.physics import step_falling_blocks
+    from pixelai.voxel.sim import mine_block
+
+    report = BenchmarkReport() if getattr(args, "bench", False) else None
+
+    if getattr(args, "load", None):
+        world = measure_step(report, "load_world", lambda: VoxelWorld.load(args.load)) if report else VoxelWorld.load(args.load)
+        recipe = world.recipe
+    else:
+        src = args.recipe.strip()
+        if src.lower() in WORLD_THEMES:
+            recipe = WorldRecipe.from_theme(src.lower(), seed=args.seed)
+        else:
+            data = json.loads(Path(src).read_text(encoding="utf-8"))
+            recipe = WorldRecipe.from_dict(data)
+            if args.seed is not None:
+                recipe.seed = args.seed
+        world = measure_step(report, "generate_world", lambda: VoxelWorld.from_recipe(recipe)) if report else VoxelWorld.from_recipe(recipe)
+
+    for mine_spec in getattr(args, "mine", None) or []:
+        parts = [int(p.strip()) for p in mine_spec.split(",")]
+        if len(parts) != 3:
+            raise ValueError(f"Invalid --mine coordinate '{mine_spec}'; expected x,y,z")
+        mine_block(world, parts[0], parts[1], parts[2])
+
     if args.ticks > 0:
-        world.step(args.ticks)
+        if report:
+            measure_step(report, "simulate_ticks", lambda: world.step(args.ticks))
+        else:
+            world.step(args.ticks)
+        if getattr(args, "gravity", False):
+            for _ in range(args.ticks):
+                step_falling_blocks(world.model)
+    elif getattr(args, "gravity", False):
+        step_falling_blocks(world.model)
+
     if args.bake:
-        world.bake()
+        if report:
+            measure_step(report, "bake_lightmap", world.bake)
+        else:
+            world.bake()
+
+    if getattr(args, "save", None):
+        world.save(args.save)
 
     info_data = world.info()
     if args.info:
@@ -304,12 +396,14 @@ def _cmd_world(args: argparse.Namespace) -> int:
 
     if args.output == "-":
         print(json.dumps(info_data, indent=2))
+        if report:
+            print(report.format_text())
         return 0
 
     w, h = _parse_size(args.size) or (192, 128)
     at = _parse_xy(args.at)
     use_lights = args.lights.lower() not in ("no", "false", "0", "off")
-    canvas = world.render(
+    render_fn = lambda: world.render(
         width=w,
         height=h,
         at=at,
@@ -322,10 +416,13 @@ def _cmd_world(args: argparse.Namespace) -> int:
         section_z=args.section_z,
         bg=args.bg,
     )
+    canvas = measure_step(report, "render_world", render_fn) if report else render_fn()
     if args.scale > 1:
         canvas = scale_nearest(canvas, args.scale)
     export_png(canvas, args.output)
     print(f"World ({recipe.theme}/{recipe.generator}, seed={recipe.seed}) -> {args.output} ({canvas.width}x{canvas.height})")
+    if report:
+        print(report.format_text())
     return 0
 
 
@@ -435,6 +532,47 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     vter.add_argument("--no-trees", action="store_true", help="Disable procedural trees/vegetation.")
     vter.set_defaults(func=_cmd_voxel_terrain)
 
+    # pixelai voxel region
+    vreg = vox_sub.add_parser("region", help="Generate chunked streaming regions around a center coordinate.")
+    vreg.add_argument("output", help="Output voxel model JSON path.")
+    vreg.add_argument("--center", default="0,0", help="Center world coordinate x,y (default: 0,0).")
+    vreg.add_argument("--radius", type=int, default=1, help="Chunk radius around center (default: 1).")
+    vreg.add_argument("--chunk-size", type=int, default=16, help="Chunk size in voxels (default: 16).")
+    vreg.add_argument("--seed", type=int, default=42, help="Procedural seed (default: 42).")
+    vreg.add_argument("--theme", choices=sorted(WORLD_THEMES), default="medieval", help="Region theme (default: medieval).")
+    vreg.set_defaults(func=_cmd_voxel_region)
+
+    # pixelai voxel rig
+    vrig = vox_sub.add_parser("rig", help="Animate an articulated 3D VoxelRig (PNG sheet or GIF).")
+    vrig.add_argument("rig", help="Path to rig JSON or 'humanoid' built-in rig.")
+    vrig.add_argument("output", help="Output .png (spritesheet) or .gif path.")
+    vrig.add_argument("--cycle", choices=("walk", "idle"), default="walk", help="Animation cycle (default: walk).")
+    vrig.add_argument("--frames", type=int, default=4, help="Number of animation frames (default: 4).")
+    vrig.add_argument("--yaw", type=float, default=35.0, help="Camera yaw in degrees (default: 35).")
+    vrig.add_argument("--elev", type=float, default=30.0, help="Camera elevation in degrees (default: 30).")
+    vrig.add_argument("--scale", type=int, default=4, help="Nearest-neighbor scale factor (default: 4).")
+    vrig.add_argument("--ms", type=int, default=120, help="Frame duration in ms for GIF output (default: 120).")
+    vrig.add_argument("--size", default=None, help="Frame size WxH (auto-framed if omitted).")
+    vrig.add_argument("--outline", choices=("outer", "none"), default="outer", help="External silhouette outline or lineless.")
+    vrig.add_argument("--bg", default=None, help="Optional background color #rrggbb.")
+    vrig.set_defaults(func=_cmd_voxel_rig)
+
+    # pixelai voxel foliage
+    vfol = vox_sub.add_parser("foliage", help="Generate standalone procedural foliage (oak, pine, bush, flower_patch).")
+    vfol.add_argument("kind", choices=("oak", "pine", "bush", "flower_patch"), help="Foliage type.")
+    vfol.add_argument("output", help="Output voxel model JSON path.")
+    vfol.add_argument("--seed", type=int, default=42, help="Procedural seed (default: 42).")
+    vfol.add_argument("--scale", type=int, default=1, help="Foliage scale factor (default: 1).")
+    vfol.set_defaults(func=_cmd_voxel_foliage)
+
+    # pixelai voxel piece
+    vpce = vox_sub.add_parser("piece", help="Generate modular architectural pieces (wall, pillar, arch, stairs, bridge).")
+    vpce.add_argument("kind", choices=("wall", "pillar", "arch", "stairs", "bridge"), help="Architectural piece type.")
+    vpce.add_argument("output", help="Output voxel model JSON path.")
+    vpce.add_argument("--size", default="8x4x8", help="Piece dimensions WxDxH (default: 8x4x8).")
+    vpce.add_argument("--theme", choices=sorted(WORLD_THEMES), default="medieval", help="Piece theme (default: medieval).")
+    vpce.set_defaults(func=_cmd_voxel_piece)
+
     # pixelai world
     wp = subparsers.add_parser(
         "world",
@@ -457,4 +595,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     wp.add_argument("--bg", default=None, help="Override background color #rrggbb.")
     wp.add_argument("--bake", action="store_true", help="Pre-bake 3D lightmap before rendering.")
     wp.add_argument("--info", default=None, help="Optional path to write world info JSON.")
+    wp.add_argument("--mine", action="append", default=[], help="Mine/remove a block at x,y,z (repeatable).")
+    wp.add_argument("--gravity", action="store_true", help="Simulate falling blocks during ticks.")
+    wp.add_argument("--save", default=None, help="Save world state snapshot to JSON.")
+    wp.add_argument("--load", default=None, help="Load world state snapshot from JSON instead of generating.")
+    wp.add_argument("--bench", action="store_true", help="Print timing benchmark report.")
     wp.set_defaults(func=_cmd_world)

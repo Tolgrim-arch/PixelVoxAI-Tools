@@ -213,6 +213,9 @@ def import_pxl(
     layer = VoxelLayer(id="imported", role="body", priority=0)
     model.add_layer(layer)
 
+    mid_shade = max(0, steps // 2)
+    _apply_voxmap_calls(source_text, layer, key_to_ramp, mid_shade)
+
     if sprite_name == "-":
         return model
 
@@ -242,6 +245,11 @@ def import_pxl(
                     r_idx = key_to_ramp.get(ch)
                     if r_idx is not None:
                         layer.set(col_i - cx, y_coord, z_idx, encode_voxel_value(r_idx, mid_shade))
+        return model
+
+    _apply_voxmap_calls(source_text, layer, key_to_ramp, mid_shade)
+
+    if sprite_name == "-":
         return model
 
     if sprite_name is None:
@@ -283,3 +291,52 @@ def import_pxl_file(in_path: str | Path, **kwargs) -> VoxelModel:
     """Import a .px.js file from disk into a VoxelModel."""
     text = Path(in_path).read_text(encoding="utf-8")
     return import_pxl(text, **kwargs)
+
+
+def _apply_voxmap_calls(
+    source_text: str,
+    layer: VoxelLayer,
+    key_to_ramp: dict[str, int],
+    mid_shade: int,
+) -> int:
+    """Parse `vox.set(x,y,z,key)`, `vox.box(x0,y0,z0,x1,y1,z1,key)`, `vox.fill(...)`, `vox.cylinder(cx,cy,z0,r,h,key)`."""
+    count = 0
+    for m in re.finditer(r"\bvox\.set\(\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*['\"]([^'\"]+)['\"]\s*\)", source_text):
+        x, y, z, key = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
+        r_idx = key_to_ramp.get(key)
+        if r_idx is not None:
+            layer.set(x, y, z, encode_voxel_value(r_idx, mid_shade))
+            count += 1
+
+    for m in re.finditer(
+        r"\bvox\.(?:box|fill)\(\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*['\"]([^'\"]+)['\"]\s*\)",
+        source_text,
+    ):
+        x0, y0, z0, x1, y1, z1 = (int(m.group(i)) for i in range(1, 7))
+        r_idx = key_to_ramp.get(m.group(7))
+        if r_idx is None:
+            continue
+        val = encode_voxel_value(r_idx, mid_shade)
+        for x in range(min(x0, x1), max(x0, x1) + 1):
+            for y in range(min(y0, y1), max(y0, y1) + 1):
+                for z in range(min(z0, z1), max(z0, z1) + 1):
+                    layer.set(x, y, z, val)
+                    count += 1
+
+    for m in re.finditer(
+        r"\bvox\.cylinder\(\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*['\"]([^'\"]+)['\"]\s*\)",
+        source_text,
+    ):
+        cx, cy, z0, r, h = (int(m.group(i)) for i in range(1, 6))
+        r_idx = key_to_ramp.get(m.group(6))
+        if r_idx is None:
+            continue
+        val = encode_voxel_value(r_idx, mid_shade)
+        for x in range(cx - r, cx + r + 1):
+            for y in range(cy - r, cy + r + 1):
+                if (x - cx) ** 2 + (y - cy) ** 2 <= r * r:
+                    for z in range(z0, z0 + h):
+                        layer.set(x, y, z, val)
+                        count += 1
+    return count
+

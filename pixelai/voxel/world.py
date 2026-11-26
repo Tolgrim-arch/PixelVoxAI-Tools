@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from pixelai.canvas import Canvas
@@ -227,3 +229,58 @@ class VoxelWorld:
 
         apply_weather_overlay(canvas, eff_weather, tick=self.tick, seed=self.recipe.seed)
         return canvas
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the full world state to a JSON-compatible dict."""
+        return {
+            "recipe": asdict(self.recipe),
+            "model": self.model.to_dict(),
+            "meta": self.meta,
+            "tick": self.tick,
+            "doors": [{"coord": list(d.coord), "is_open": d.is_open} for d in self.doors],
+            "floaters": [
+                {"x": f.x, "y": f.y, "base_z": f.base_z, "offset_z": f.offset_z}
+                for f in self.floaters
+            ],
+            "particles": [
+                {"x": p.x, "y": p.y, "z": p.z, "vz": p.vz, "life": p.life}
+                for p in self.particles
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> VoxelWorld:
+        """Restore a VoxelWorld from a serialized dict."""
+        recipe = WorldRecipe(**data["recipe"])
+        model = VoxelModel.from_dict(data["model"])
+        doors = [Door(coord=tuple(d["coord"]), is_open=bool(d.get("is_open", False))) for d in data.get("doors", [])]
+        floaters = [
+            Floater(x=int(f["x"]), y=int(f["y"]), base_z=int(f["base_z"]), offset_z=float(f.get("offset_z", 0.0)))
+            for f in data.get("floaters", [])
+        ]
+        particles = [
+            Particle(x=float(p["x"]), y=float(p["y"]), z=float(p["z"]), vz=float(p.get("vz", 0.15)), life=int(p.get("life", 10)))
+            for p in data.get("particles", [])
+        ]
+        water_sim = ShallowWaterSim(width=recipe.width, height=recipe.depth)
+        return cls(
+            recipe=recipe,
+            model=model,
+            meta=dict(data.get("meta", {})),
+            tick=int(data.get("tick", 0)),
+            doors=doors,
+            floaters=floaters,
+            particles=particles,
+            water_sim=water_sim,
+        )
+
+    def save(self, path: str | Path) -> None:
+        """Save world state to a JSON file."""
+        Path(path).write_text(json.dumps(self.to_dict(), indent=2) + "\n", encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: str | Path) -> VoxelWorld:
+        """Load world state from a JSON file."""
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(data)
+
